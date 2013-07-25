@@ -1,0 +1,20 @@
+body {
+    background-color: #000000;
+    margin: 0px;
+    overflow: hidden;
+}
+
+a {
+    color:#0078ff;
+}
+
+.node-label {
+    padding: 3px;
+    background-color: #C6E2FF;
+    border-color: #676869;
+    border-style: outset;
+    border-width: 2px;
+    -webkit-border-radius: 2px;
+    -moz-border-radius: 2px;
+    border-radius: 2px; 
+}

@@ -1,0 +1,318 @@
+// The usual stuff you expect in three js
+var camera;
+var scene;
+// Used for detecting a mouse click on a node
+var projector;
+// A flat array of nodes used for mouse click detection
+var dNodes = [];
+// The scene wil have two renderers
+// This is a WebGL renderer
+var renderer;
+// This is a CSS3d renderer
+var rendererCSS;
+// Laziness variable, please ignore
+var origin = new THREE.Vector3(0, 0, 0);
+// Useful constant for calculating points on a hexagon
+var p = Math.sqrt(3) / 2;
+// The radius to use for the hex grid
+var hexRadius = 5;
+// The distance at which secondary nodes orbit around primary nodes
+var orbitDist = 3;
+// An array of hexagonal grids for each level
+var grids = [];
+
+// The radius of primary nodes
+var nodeRadius = 1;
+// The radius of secondary nodes
+var secondaryNodeRadius = .5;
+// The geometry for a primary node
+var primaryNodeGeo = new THREE.SphereGeometry(nodeRadius, 30, 30);
+// Geometry for a secondary node
+var secondaryNodeGeo = new THREE.SphereGeometry(secondaryNodeRadius, 20, 20);
+// Default node material. This is temporary
+var nodeMaterial = new THREE.MeshNormalMaterial();
+// Material for lines connecting nodes
+var lineMaterial = new THREE.LineBasicMaterial({color: 0xffffff, opacity: 0.5, linewidth: 2});
+// Material for the lines connecting nodes in the main path
+var pathLineMaterial = new THREE.LineBasicMaterial({color: 0xff0000, opacity: 0.5, linewidth: 2});
+
+// Distance on the z axis between different levels
+var levelHeight = 15;
+
+// Points on a hexagon, used to quickly draw a hexagon mesh
+hexPoints = [];
+hexPoints.push(new THREE.Vector2(1, 0));
+hexPoints.push(new THREE.Vector2(.5, p));
+hexPoints.push(new THREE.Vector2(-.5, p));
+hexPoints.push(new THREE.Vector2(-1, 0));
+hexPoints.push(new THREE.Vector2(-.5, -p));
+hexPoints.push(new THREE.Vector2(.5, -p));
+hexPoints.push(new THREE.Vector2(1, 0));
+
+// Represents a path between nodes n1 and n11, such as we might get from UNIS
+var path = ["n1", "n2", "n3", "n7", "n11"];
+
+// A map of node names and indexes on the hexGrid
+var nodes = {};
+
+// Nodes that are one hop away from a given node
+var adjacentNodes = {
+  "n1": ["n2", "n5", "n7"],
+  "n2": ["n1", "n3", "n5", "n6"],
+  "n3": ["n2", "n4", "n6", "n8", "n9", "n10", "n11", "n12", "n13", "n14", "n15", "n16", "n17", "n18"],
+  "n4": ["n3", "n7", "n9"],
+  "n5": ["n1", "n2", "n6"],
+  "n6": ["n2", "n3", "n5"],
+  "n7": ["n1", "n4"],
+  "n8": ["n3", "n9"],
+  "n9": ["n4", "n8"],
+  "n11": ["n24", "n25", "n26", "n27", "n28", "n29", "n30", "n40", "n50"],
+  "n24": ["n34", "n35", "n37"]
+};
+
+init();
+animate();
+
+var plane;
+var cube;
+
+function init() {
+  var container1 = document.getElementById('container1');
+  var container2 = document.getElementById('container2');
+
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+  
+  // Test: get the direction of the camera
+  camera.position.set(10,10,10);
+  projector = new THREE.Projector();
+  //console.log("CAM DIR");
+  //getCamDir();
+  
+  //lookAt(new THREE.Vector3(0,0,0));
+
+  scene = new THREE.Scene();
+  camera.lookAt(scene.position);
+  
+  rendererCSS = new THREE.CSS3DRenderer();
+  rendererCSS.setSize(window.innerWidth, window.innerHeight);
+  rendererCSS.domElement.style.position = 'absolute';
+  container1.appendChild(rendererCSS.domElement);
+
+  renderer = new THREE.WebGLRenderer({antialias: true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container2.appendChild(renderer.domElement);
+
+  initAxes();
+  initCube();
+
+  plane = new THREE.Mesh(new THREE.PlaneGeometry(300, 300),nodeMaterial);
+  scene.add(plane);
+  plane.overdraw = true;
+  //plane.rotation.x = -Math.PI/2;
+
+  window.addEventListener('resize', onWindowResize, false);
+  window.addEventListener('keydown', onDocumentKeyDown, false);
+}
+
+function initAxes() {
+  // Make some coordinate axes
+  var x1 = new THREE.Vector3(40, 0, 0);
+  var y1 = new THREE.Vector3(0, 40, 0);
+  var z1 = new THREE.Vector3(0, 0, 40);
+  var xGeo = new THREE.Geometry();
+  var yGeo = new THREE.Geometry();
+  var zGeo = new THREE.Geometry();
+  xGeo.vertices.push(origin);
+  xGeo.vertices.push(x1);
+  yGeo.vertices.push(origin);
+  yGeo.vertices.push(y1);
+  zGeo.vertices.push(origin);
+  zGeo.vertices.push(z1);
+  // Meterial for the axes
+  var xMaterial = new THREE.LineBasicMaterial({color: 0xff0000, linewidth: 1});
+  var yMaterial = new THREE.LineBasicMaterial({color: 0x00ff00, linewidth: 1});
+  var zMaterial = new THREE.LineBasicMaterial({color: 0x0000ff, linewidth: 1});
+  var xa = new THREE.Line(xGeo, xMaterial);
+  var ya = new THREE.Line(yGeo, yMaterial);
+  var za = new THREE.Line(zGeo, zMaterial);
+
+  scene.add(xa);
+  scene.add(ya);
+  scene.add(za);
+}
+
+function initCube(){
+  cubeGeo = new THREE.CubeGeometry(2,2,2);
+  cube = new THREE.Mesh(cubeGeo,nodeMaterial);
+  scene.add(cube);
+
+   // Make some coordinate axes
+  var x1 = new THREE.Vector3(5, 0, 0);
+  var y1 = new THREE.Vector3(0, 5, 0);
+  var z1 = new THREE.Vector3(0, 0, -5);
+  var l = new THREE.Vector3(5, 0, 5);
+  var xGeo = new THREE.Geometry();
+  var yGeo = new THREE.Geometry();
+  var zGeo = new THREE.Geometry();
+  var lGeo = new THREE.Geometry();
+  xGeo.vertices.push(origin);
+  xGeo.vertices.push(x1);
+  yGeo.vertices.push(origin);
+  yGeo.vertices.push(y1);
+  zGeo.vertices.push(origin);
+  zGeo.vertices.push(z1);
+  lGeo.vertices.push(l);
+  lGeo.vertices.push(origin);
+  // Meterial for the axes
+  var xMaterial = new THREE.LineBasicMaterial({color: 0xff0000, linewidth: 1});
+  var yMaterial = new THREE.LineBasicMaterial({color: 0x00ff00, linewidth: 1});
+  var zMaterial = new THREE.LineBasicMaterial({color: 0x0000ff, linewidth: 1});
+  var lMaterial = new THREE.LineBasicMaterial({color: 0x000000, linewidth: 1});
+  var xa = new THREE.Line(xGeo, xMaterial);
+  var ya = new THREE.Line(yGeo, yMaterial);
+  var za = new THREE.Line(zGeo, zMaterial);
+  var la = new THREE.Line(lGeo, lMaterial);
+  scene.add(xa);
+  scene.add(ya);
+  scene.add(za);
+  //scene.add(la);
+  
+  xa.parent = cube;
+  ya.parent = cube;
+  za.parent = cube;
+  la.parent = cube;
+  //cube.children.push(xa);
+  //cube.children.push(ya);
+  //cube.children.push(za);
+
+  cube.position.z = 5;
+  cube.position.y = 5;
+
+  cube.useQuaternion = true;
+  
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  rendererCSS.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  render();
+}
+
+function render() {
+  rendererCSS.render(scene, camera);
+  renderer.render(scene, camera);
+}
+
+function onDocumentKeyDown(event) {
+  console.log(event.keyCode);
+  var key = event.keyCode;
+  //console.log(camera.rotation);
+  
+  switch (key) {
+    case 37:
+      quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), .1);
+      cube.setRotationFromQuaternion(quaternion);
+      cube.updateMatrix();
+      console.log(cube.rotation);
+      break;
+    case 39:
+      quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), -.1);
+      cube.setRotationFromQuaternion(quaternion);
+      cube.updateMatrix();
+      console.log(cube.rotation);
+      break;
+    case 38:
+      cube.rotation.x += .01;
+      //cube.rotateOnAxis(new THREE.Vector3(1,0,0),.01);
+      console.log(cube.rotation);
+      break;
+    case 40:
+      cube.rotation.x -= .01;
+      //cube.rotateOnAxis(new THREE.Vector3(1,0,0),-.01);
+      console.log(cube.rotation);
+      break;
+    case 65:
+      cube.rotation.z -= .01;
+      console.log(cube.rotation);
+      break;
+    case 68:
+      cube.rotation.z += .01;
+      console.log(cube.rotation);
+      break;
+    
+  }
+}
+
+// Takes in a THREE.Vector2 and returns the angle of orientation
+function getAngle(v) {
+  v.normalize();
+  var pAngle = Math.asin(v.y);
+
+  if (v.x >= 0)
+    return pAngle;
+  return 3*Math.PI/2 - pAngle;
+}
+
+// An alternative version of the camera lookAt function that only changes the 
+// x and y rotation of the camera and leaves tilt alone
+function lookAt(v){
+  var v2 = new THREE.Vector2();
+  var cv = new THREE.Vector2();
+  var angle;
+
+  // xz plane
+  cv.set(camera.position.x,camera.position.z);
+  v2.set(v.x,v.z);
+
+  console.log("cv");
+  console.log(cv);
+  console.log("v2");
+  console.log(v2);
+
+  console.log("DIFF");
+  cv.sub(v2);
+  console.log(cv);
+  console.log("ANGLE");
+  angle = getAngle(cv);
+  console.log(angle);
+  camera.rotation.y = angle;
+  
+  // yz plane
+  /*cv.x = camera.position.y;
+  cv.y = camera.position.z;
+  console.log("cv");
+  console.log(cv);
+  v2.set(v.y,v.z);
+  console.log("v2");
+  console.log(v2);
+  v2.sub(cv);
+  console.log("DIFF");
+  console.log(v2);
+  console.log("ANGLE");
+  angle = getAngle(v2);
+  console.log(angle);
+  camera.rotation.x = angle;*/
+}
+
+function getCamDir(){
+  var v = new THREE.Vector3(0,0,-1);
+  v.applyEuler( camera.rotation, camera.eulerOrder );
+  console.log(v.normalize());
+  
+  // what vector, when it undergoes the transformation, ends up being
+  // the correct matrix in world space
+  
+  
+  // Get the angle in the xy plane
+  //var v1 = new THREE.Vector2(v.x,v.y);
+  //console.log("CAM ANGLE");
+  //console.log(getAngle(v1));
+}
+
+
